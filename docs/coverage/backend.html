@@ -1,0 +1,455 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>server: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">calculadora-api/cmd/server/main.go (16.7%)</option>
+				
+				<option value="file1">calculadora-api/internal/api/handlers.go (97.6%)</option>
+				
+				<option value="file2">calculadora-api/internal/api/middleware.go (100.0%)</option>
+				
+				<option value="file3">calculadora-api/internal/api/router.go (100.0%)</option>
+				
+				<option value="file4">calculadora-api/internal/calculator/calculator.go (100.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package main
+
+import (
+        "context"
+        "errors"
+        "log"
+        "net/http"
+        "os"
+        "os/signal"
+        "syscall"
+        "time"
+
+        "calculadora-api/internal/api"
+)
+
+func main() {
+        <span class="cov0" title="0">port := getEnv("PORT", "8080")
+        allowedOrigin := getEnv("CORS_ORIGIN", "*")
+</span>
+        <span class="cov0" title="0">server := &amp;http.Server{
+                Addr:              ":" + port,
+                Handler:           api.NewRouter(allowedOrigin),
+                ReadHeaderTimeout: 5 * time.Second,
+</span>        }
+
+        // Se escucha Ctrl+C y SIGTERM (lo que manda docker stop) para apagar
+        // el servidor sin cortar las peticiones que estén en curso.
+        <span class="cov0" title="0">ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+        defer stop()
+</span>
+        <span class="cov0" title="0">go func() </span>{
+                <span class="cov0" title="0">log.Printf("API escuchando en http://localhost:%s", port)
+                if err := server.ListenAndServe(); err != nil &amp;&amp; !errors.Is(err, http.ErrServerClosed) </span>{
+                        <span class="cov0" title="0">log.Fatalf("no se pudo iniciar el servidor: %v", err)
+</span>                }
+        }()
+
+        <span class="cov0" title="0">&lt;-ctx.Done()
+        log.Println("apagando el servidor...")
+</span>
+        <span class="cov0" title="0">shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        if err := server.Shutdown(shutdownCtx); err != nil </span>{
+                <span class="cov0" title="0">log.Printf("error al apagar el servidor: %v", err)
+</span>        }
+}
+
+// getEnv lee una variable de entorno y si no está definida usa el valor por defecto.
+func getEnv(key, fallback string) string {
+        <span class="cov8" title="1">if value := os.Getenv(key); value != "" </span>{
+                <span class="cov8" title="1">return value
+</span>        }
+        <span class="cov8" title="1">return fallback</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package api
+
+import (
+        "encoding/json"
+        "errors"
+        "fmt"
+        "log"
+        "net/http"
+)
+
+// Tamaño máximo del body. Para mandar dos números sobra con 1 KB.
+const maxBodySize = 1024
+
+// calcRequest es el body que reciben todos los endpoints de operaciones.
+// Los campos son punteros para poder diferenciar "no lo mandaron" de "mandaron 0".
+type calcRequest struct {
+        A *float64 `json:"a"`
+        B *float64 `json:"b"`
+}
+
+type calcResponse struct {
+        Operation string   `json:"operation"`
+        A         float64  `json:"a"`
+        B         *float64 `json:"b,omitempty"`
+        Result    float64  `json:"result"`
+}
+
+type errorResponse struct {
+        Error string `json:"error"`
+}
+
+type binaryFunc func(a, b float64) (float64, error)
+type unaryFunc func(a float64) (float64, error)
+
+// binaryHandler arma el handler de una operación que usa dos números (a y b).
+func binaryHandler(name string, op binaryFunc) http.HandlerFunc {
+        <span class="cov8" title="1">return func(w http.ResponseWriter, r *http.Request) </span>{
+                <span class="cov8" title="1">req, ok := readRequest(w, r, true)
+                if !ok </span>{
+                        <span class="cov8" title="1">return
+</span>                }
+                <span class="cov8" title="1">result, err := op(*req.A, *req.B)
+                respond(w, name, req, result, err)</span>
+        }
+}
+
+// unaryHandler arma el handler de una operación que usa un solo número (a).
+// Si en el body viene b simplemente se ignora.
+func unaryHandler(name string, op unaryFunc) http.HandlerFunc {
+        <span class="cov8" title="1">return func(w http.ResponseWriter, r *http.Request) </span>{
+                <span class="cov8" title="1">req, ok := readRequest(w, r, false)
+                if !ok </span>{
+                        <span class="cov8" title="1">return
+</span>                }
+                <span class="cov8" title="1">req.B = nil
+                result, err := op(*req.A)
+                respond(w, name, req, result, err)</span>
+        }
+}
+
+// readRequest lee el body y valida que vengan los campos necesarios.
+// Si algo está mal ya deja escrito el error en la respuesta y devuelve ok = false.
+func readRequest(w http.ResponseWriter, r *http.Request, needsB bool) (calcRequest, bool) {
+        <span class="cov8" title="1">var req calcRequest
+</span>
+        <span class="cov8" title="1">r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+        if err := json.NewDecoder(r.Body).Decode(&amp;req); err != nil </span>{
+                <span class="cov8" title="1">writeError(w, http.StatusBadRequest, decodeErrorMessage(err))
+                return req, false
+</span>        }
+
+        <span class="cov8" title="1">if req.A == nil </span>{
+                <span class="cov8" title="1">writeError(w, http.StatusBadRequest, "falta el campo 'a'")
+                return req, false
+</span>        }
+        <span class="cov8" title="1">if needsB &amp;&amp; req.B == nil </span>{
+                <span class="cov8" title="1">writeError(w, http.StatusBadRequest, "falta el campo 'b'")
+                return req, false
+</span>        }
+        <span class="cov8" title="1">return req, true</span>
+}
+
+// decodeErrorMessage traduce los errores del decoder de JSON a un mensaje más
+// entendible para quien usa la API.
+func decodeErrorMessage(err error) string {
+        <span class="cov8" title="1">var typeErr *json.UnmarshalTypeError
+        var sizeErr *http.MaxBytesError
+</span>
+        <span class="cov8" title="1">switch </span>{
+        case errors.As(err, &amp;sizeErr):
+                <span class="cov8" title="1">return "el body es demasiado grande"</span>
+        case errors.As(err, &amp;typeErr) &amp;&amp; typeErr.Field != "":
+                <span class="cov8" title="1">return fmt.Sprintf("el campo '%s' debe ser un número válido", typeErr.Field)</span>
+        default:
+                <span class="cov8" title="1">return `el body debe ser un JSON válido, por ejemplo {"a": 1, "b": 2}`</span>
+        }
+}
+
+// respond manda el resultado de la operación, o el error si no se pudo calcular.
+func respond(w http.ResponseWriter, name string, req calcRequest, result float64, err error) {
+        <span class="cov8" title="1">if err != nil </span>{
+                // La petición está bien formada pero la operación no se puede hacer
+                // (dividir entre cero, raíz de un negativo, etc.), por eso 422 y no 400.
+                <span class="cov8" title="1">writeError(w, http.StatusUnprocessableEntity, err.Error())
+                return
+</span>        }
+
+        <span class="cov8" title="1">writeJSON(w, http.StatusOK, calcResponse{
+                Operation: name,
+                A:         *req.A,
+                B:         req.B,
+                Result:    result,
+        })</span>
+}
+
+func health(w http.ResponseWriter, _ *http.Request) {
+        <span class="cov8" title="1">writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+</span>}
+
+func writeJSON(w http.ResponseWriter, status int, data any) {
+        <span class="cov8" title="1">w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(status)
+        if err := json.NewEncoder(w).Encode(data); err != nil </span>{
+                <span class="cov0" title="0">log.Printf("no se pudo escribir la respuesta: %v", err)
+</span>        }
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+        <span class="cov8" title="1">writeJSON(w, status, errorResponse{Error: message})
+</span>}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package api
+
+import (
+        "log"
+        "net/http"
+        "time"
+)
+
+// cors agrega los headers necesarios para que un navegador pueda llamar a la
+// API desde otro origen (por ejemplo si el frontend corre sin el proxy).
+func cors(allowedOrigin string, next http.Handler) http.Handler {
+        <span class="cov8" title="1">return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span>{
+                <span class="cov8" title="1">w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+                w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+</span>
+                // El preflight del navegador solo necesita los headers de arriba
+                <span class="cov8" title="1">if r.Method == http.MethodOptions </span>{
+                        <span class="cov8" title="1">w.WriteHeader(http.StatusNoContent)
+                        return
+</span>                }
+                <span class="cov8" title="1">next.ServeHTTP(w, r)</span>
+        })
+}
+
+// statusRecorder guarda el código de respuesta para poder mostrarlo en el log.
+type statusRecorder struct {
+        http.ResponseWriter
+        status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+        <span class="cov8" title="1">s.status = code
+        s.ResponseWriter.WriteHeader(code)
+</span>}
+
+// logRequests imprime una línea por petición: método, ruta, código y duración.
+func logRequests(next http.Handler) http.Handler {
+        <span class="cov8" title="1">return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span>{
+                <span class="cov8" title="1">start := time.Now()
+                rec := &amp;statusRecorder{ResponseWriter: w, status: http.StatusOK}
+</span>
+                <span class="cov8" title="1">next.ServeHTTP(rec, r)
+</span>
+                <span class="cov8" title="1">log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
+</span>        })
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">// Package api expone la calculadora como una API REST.
+package api
+
+import (
+        "net/http"
+
+        "calculadora-api/internal/calculator"
+)
+
+// NewRouter registra todas las rutas de la API.
+// allowedOrigin es el origen permitido para CORS ("*" deja pasar a cualquiera).
+func NewRouter(allowedOrigin string) http.Handler {
+        <span class="cov8" title="1">mux := http.NewServeMux()
+</span>
+        <span class="cov8" title="1">mux.HandleFunc("GET /api/health", health)
+</span>
+        <span class="cov8" title="1">mux.HandleFunc("POST /api/add", binaryHandler("add", calculator.Add))
+        mux.HandleFunc("POST /api/subtract", binaryHandler("subtract", calculator.Subtract))
+        mux.HandleFunc("POST /api/multiply", binaryHandler("multiply", calculator.Multiply))
+        mux.HandleFunc("POST /api/divide", binaryHandler("divide", calculator.Divide))
+        mux.HandleFunc("POST /api/power", binaryHandler("power", calculator.Power))
+        mux.HandleFunc("POST /api/percentage", binaryHandler("percentage", calculator.Percentage))
+        mux.HandleFunc("POST /api/sqrt", unaryHandler("sqrt", calculator.Sqrt))
+</span>
+        <span class="cov8" title="1">return logRequests(cors(allowedOrigin, mux))
+</span>}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">// Package calculator tiene la lógica matemática de la calculadora.
+// No sabe nada de HTTP, así se puede probar y reutilizar por separado.
+package calculator
+
+import (
+        "errors"
+        "math"
+)
+
+// Errores que pueden devolver las operaciones. Se exportan para poder
+// compararlos con errors.Is desde los handlers y desde los tests.
+var (
+        ErrDivisionByZero = errors.New("no se puede dividir entre cero")
+        ErrNegativeSqrt   = errors.New("no se puede calcular la raíz cuadrada de un número negativo")
+        ErrNotRealNumber  = errors.New("el resultado no es un número real")
+        ErrOutOfRange     = errors.New("el resultado es demasiado grande")
+)
+
+// Add devuelve a + b.
+func Add(a, b float64) (float64, error) {
+        <span class="cov8" title="1">return checkResult(a + b)
+</span>}
+
+// Subtract devuelve a - b.
+func Subtract(a, b float64) (float64, error) {
+        <span class="cov8" title="1">return checkResult(a - b)
+</span>}
+
+// Multiply devuelve a * b.
+func Multiply(a, b float64) (float64, error) {
+        <span class="cov8" title="1">return checkResult(a * b)
+</span>}
+
+// Divide devuelve a / b. Falla si b es cero.
+func Divide(a, b float64) (float64, error) {
+        <span class="cov8" title="1">if b == 0 </span>{
+                <span class="cov8" title="1">return 0, ErrDivisionByZero
+</span>        }
+        <span class="cov8" title="1">return checkResult(a / b)</span>
+}
+
+// Power devuelve a elevado a la b.
+func Power(a, b float64) (float64, error) {
+        // 0 elevado a un negativo es dividir entre cero (0^-2 = 1/0^2)
+        <span class="cov8" title="1">if a == 0 &amp;&amp; b &lt; 0 </span>{
+                <span class="cov8" title="1">return 0, ErrDivisionByZero
+</span>        }
+        <span class="cov8" title="1">return checkResult(math.Pow(a, b))</span>
+}
+
+// Sqrt devuelve la raíz cuadrada de a. Falla si a es negativo.
+func Sqrt(a float64) (float64, error) {
+        <span class="cov8" title="1">if a &lt; 0 </span>{
+                <span class="cov8" title="1">return 0, ErrNegativeSqrt
+</span>        }
+        <span class="cov8" title="1">return checkResult(math.Sqrt(a))</span>
+}
+
+// Percentage devuelve el a% de b. Por ejemplo Percentage(20, 150) = 30.
+func Percentage(a, b float64) (float64, error) {
+        <span class="cov8" title="1">return checkResult(a * b / 100)
+</span>}
+
+// checkResult revisa que el resultado sea un número finito. Con float64 una
+// operación puede terminar en Inf (overflow) o NaN (por ejemplo (-8)^(1/3)
+// con math.Pow), y esos valores ni siquiera se pueden mandar en JSON.
+func checkResult(result float64) (float64, error) {
+        <span class="cov8" title="1">if math.IsNaN(result) </span>{
+                <span class="cov8" title="1">return 0, ErrNotRealNumber
+</span>        }
+        <span class="cov8" title="1">if math.IsInf(result, 0) </span>{
+                <span class="cov8" title="1">return 0, ErrOutOfRange
+</span>        }
+        <span class="cov8" title="1">if result == 0 </span>{
+                // evita devolver -0 (pasa con cosas como -5 * 0)
+                <span class="cov8" title="1">return 0, nil
+</span>        }
+        <span class="cov8" title="1">return result, nil</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
