@@ -127,6 +127,11 @@ input {
   font-weight: 500;
 }
 
+/* Los errores de Go vienen en minúscula, acá se pone la primera en mayúscula */
+.display__error::first-letter {
+  text-transform: uppercase;
+}
+
 /* ---------- Formulario ---------- */
 
 .calc-form {

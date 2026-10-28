@@ -4,6 +4,8 @@ import type { Operation } from '../operations'
 // el mismo origen. VITE_API_URL sirve por si el backend está en otra URL.
 const API_URL = import.meta.env.VITE_API_URL ?? ''
 
+const CONNECTION_ERROR = 'No se pudo conectar con el servidor. Revisa que el backend esté corriendo.'
+
 export class ApiError extends Error {
   status?: number
 
@@ -32,15 +34,14 @@ export async function calculate(operation: Operation, a: number, b?: number): Pr
     })
   } catch {
     // fetch solo falla así cuando no hay conexión con el servidor
-    throw new ApiError('No se pudo conectar con el servidor. Revisa que el backend esté corriendo.')
+    throw new ApiError(CONNECTION_ERROR)
   }
 
   // Si la respuesta no es JSON (por ejemplo un 502 del proxy) data queda en null
   const data: ApiResponse | null = await response.json().catch(() => null)
 
   if (!response.ok) {
-    const message = data?.error ?? `El servidor respondió con un error (${response.status})`
-    throw new ApiError(message, response.status)
+    throw new ApiError(data?.error ?? messageForStatus(response.status), response.status)
   }
 
   const result = data?.result
@@ -48,4 +49,13 @@ export async function calculate(operation: Operation, a: number, b?: number): Pr
     throw new ApiError('La respuesta del servidor no tiene el formato esperado')
   }
   return result
+}
+
+function messageForStatus(status: number): string {
+  // El proxy (Vite en desarrollo o nginx en Docker) devuelve 502/503/504
+  // cuando no puede llegar al backend, así que se muestra como error de conexión
+  if (status === 502 || status === 503 || status === 504) {
+    return CONNECTION_ERROR
+  }
+  return `El servidor respondió con un error (${status})`
 }

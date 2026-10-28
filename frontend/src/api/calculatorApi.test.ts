@@ -44,13 +44,19 @@ describe('calculate', () => {
   })
 
   it('usa un mensaje genérico si el error no viene en JSON', async () => {
-    fetchMock.mockResolvedValue(fakeResponse(502))
+    fetchMock.mockResolvedValue(fakeResponse(500))
 
-    await expect(calculate('add', 1, 2)).rejects.toThrow('El servidor respondió con un error (502)')
+    await expect(calculate('add', 1, 2)).rejects.toThrow('El servidor respondió con un error (500)')
   })
 
   it('avisa cuando no se puede conectar con el backend', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+
+    await expect(calculate('add', 1, 2)).rejects.toThrow('No se pudo conectar con el servidor')
+  })
+
+  it.each([502, 503, 504])('un %s del proxy se muestra como error de conexión', async (status) => {
+    fetchMock.mockResolvedValue(fakeResponse(status))
 
     await expect(calculate('add', 1, 2)).rejects.toThrow('No se pudo conectar con el servidor')
   })
