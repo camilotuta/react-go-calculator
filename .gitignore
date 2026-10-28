@@ -1,0 +1,17 @@
+# Frontend
+node_modules/
+dist/
+frontend/coverage/
+*.local
+*.log
+
+# Backend
+backend/coverage.out
+backend/coverage.html
+*.exe
+
+# Editores y sistema operativo
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
